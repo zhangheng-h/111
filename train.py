@@ -1,0 +1,82 @@
+from torch import nn, optim
+from torch.utils.data import DataLoader
+import warnings
+import shutil
+import os
+from tensorboardX import SummaryWriter
+import net
+import torch
+import data
+import datetime as dt
+
+warnings.filterwarnings('ignore')
+shutil.rmtree('tensorboard')
+write = SummaryWriter(log_dir='tensorboard/loss')
+batch_size = 8
+learn_rate = 1e-5
+num_epoches = 1000
+
+
+def load_model(model_path, remove_exist_model=False):
+    if remove_exist_model is True:
+        my_model = net.F_DnCNN()
+        if os.path.exists(model_path + 'first.pkl'):
+            os.remove(model_path + 'first.pkl')
+            print('remove exist model finish')
+        else:
+            print('not have model files in the route!')
+        return my_model
+    else:
+        model_temp = torch.load(model_path + 'first.pkl')
+        print('load model finish')
+        return model_temp
+
+
+def get_sys_time():
+    time = str(dt.datetime.now())
+    return time
+
+
+LLR = "/home/zhangheng/PycharmProjects/Res_DN/LLR/"
+first = "/home/zhangheng/PycharmProjects/fake_DnCNN/model/"
+
+# transform=trans:forms.Compose([transforms.ToTensor(),])
+
+train_data = data.My_dataset(LLR)
+train_lodaer = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
+file = "/home/zhangheng/PycharmProjects/fake_DnCNN/record.txt"
+
+if os.path.exists(file):
+    os.remove(file)
+writefile = open(file, 'w')
+retrain = False
+if retrain is True:
+    model = load_model(first, remove_exist_model=True)
+else:
+    model = load_model(first, remove_exist_model=False)
+# model = net.F_DnCNN()
+criterion = nn.MSELoss(reduction="mean")
+optimizer = optim.SGD(model.parameters(), lr=learn_rate, momentum=0.9, weight_decay=1e-5)
+cost = []
+rou = 0
+F = False
+for epoch in range(num_epoches):
+    for img, labels in train_lodaer:
+        output = model(img)
+        loss = criterion(output, (img - labels))
+        cost.append(loss.data.numpy())
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    write.add_scalar('model_loss', loss, epoch)
+    if F is True:
+        write.add_graph(model, input_to_model=img)
+        F = False
+    print("time:{}".format(get_sys_time()), "epoch:{}   loss:{}".format(epoch, cost[-1]))
+    torch.save(model, first + "first.pkl")
+    print('model saved')
+write.close()
+writefile.write('time:{}'.format(get_sys_time())+'model saved'+'\n')
+writefile.close()
+torch.save(model, first + "first.pkl")

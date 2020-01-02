@@ -1,0 +1,103 @@
+import os
+from PIL import Image
+import torch
+import numpy as np
+from torchvision import transforms
+from torch.utils.data import dataset, DataLoader
+from torchvision.transforms import ToTensor, ToPILImage, Compose
+import math
+import cv2
+
+after = '/home/zhangheng/PycharmProjects/fake_DnCNN/test/'
+LLR = "/home/zhangheng/PycharmProjects/Res_DN/LLR/"
+label_path = "/home/zhangheng/PycharmProjects/Res_DN/LHR/"
+first = '/home/zhangheng/PycharmProjects/Res_DN/model/'
+
+
+class My_dataset(dataset.Dataset):
+    def __init__(self, filenames, transform=None):
+        super(My_dataset, self).__init__()
+        self.filenames = filenames
+        self.transform = transform
+        img = [os.path.join(filenames, image) for image in os.listdir(filenames)]
+        img = sorted(img, key=lambda x: (x.split("/")[-1].split(".")[-2]))
+        self.img = img
+
+    def __len__(self):
+        return len(self.img)
+
+    def __getitem__(self, idx):
+        img_path = self.img[idx]
+        # image = cv2.imread(img_path)
+        image = Image.open(img_path)
+        image = ToTensor()(image)
+        image = np.array(image).astype(np.float32)
+        # image = image.transpose((2, 0, 1))
+        a = img_path.split("/")[-1]
+        print(a)
+        self.label_path = os.path.join(label_path, a)
+        # labels = cv2.imread(self.label_path)
+        labels = Image.open(self.label_path)
+        labels = ToTensor()(labels)
+        labels = np.array(labels).astype(np.float32)
+        # labels = labels.transpose((2, 0, 1))
+        return image, labels
+
+
+unloader = transforms.ToPILImage()
+loader = transforms.Compose([transforms.ToTensor()])
+
+
+def tensor_to_PIL(tensor):
+    image = tensor.cpu().clone()
+    image = image.squeeze(0)
+    image = unloader(image)
+    return image
+
+
+model = torch.load(first + "first.pkl", map_location="cpu")
+# model = model.module
+model.eval()
+eval_loss = 0
+batch_size = 1
+pnsr = 0
+count = 0
+transform = transforms.Compose([transforms.ToTensor()])
+text = My_dataset(LLR, transform=transform)
+train_loader = DataLoader(text, batch_size=batch_size)
+
+
+def psnr1(img1, img2):
+    mse = np.mean((img1 / 1.0 - img2 / 1.0) ** 2)
+    if mse < 1.0e-10:
+        return 100
+    return 10 * math.log10(255.0 ** 2 / mse)
+
+
+def psnr2(img1, img2):
+    mse = np.mean((img1 / 255. - img2 / 255.) ** 2)
+    if mse < 1.0e-10:
+        return 100
+    PIXEL_MAX = 1
+    return 20 * math.log10(PIXEL_MAX / math.sqrt(mse))
+
+
+for img, label in train_loader:
+    # print(img)
+    output = model(img)
+    output = img - output
+    # save_image_tensor2pillow(output,af + i)
+    # outimg = text_dateset.reshape_tensor_to_image(output)
+    # outimg = output.transpose(0, 2, 3, 1)
+    outimg = tensor_to_PIL(output)
+    i = np.array(outimg)
+    # print(i)
+    # print(outimg)
+    # cv2.imwrite(af + '{}.png'.format(count), outimg[0])
+    outimg.save(after+"{}.png".format(count))
+    label = tensor_to_PIL(label)
+    # label.save(after+"{}.png".format(count))
+    ii = np.array(label)
+    count += 1
+    pnsr += psnr1(i, ii)
+print('meanpsnr:%f' % float(pnsr / 800))
